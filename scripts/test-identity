@@ -1,0 +1,286 @@
+#!/usr/bin/env bash
+set -uo pipefail
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$here"
+for v in 1.6 1.7; do
+  [ -f "$v/Assemblies/ModRimWorldFactionalWar.dll" ] || { echo "build both versions first (dotnet build Build.proj): $v/Assemblies/ModRimWorldFactionalWar.dll is missing" >&2; exit 4; }
+done
+git rev-parse -q --verify original-1.4 >/dev/null || { echo "tag original-1.4 (Shadowrabbit's last commit, 3d35b55) is missing; fetch tags" >&2; exit 4; }
+fail=0
+check() {
+  local out
+  if out="$("${@:2}" 2>&1)"; then echo "PASS $1"; else echo "FAIL $1"; [ -z "$out" ] || printf '%s\n' "$out" | sed 's/^/    /'; fail=1; fi
+}
+upstream() { git show "original-1.4:$1"; }
+ORIGINAL_ID=2534328163
+
+about_ok() {
+  python3 -I - About/About.xml <<'PY'
+import sys, xml.etree.ElementTree as ET
+r = ET.parse(sys.argv[1]).getroot()
+t = lambda p: r.findtext(p)
+assert t("name") == "Factional War (rimhunter)", t("name")
+for taken in ("[SR]Factional War", "[SR]Factional War Continued [Abandoned]", "[SR]Factional War (fork)", "[SR]Factional War - Continued"):
+    assert t("name").lower() != taken.lower(), "name collides with " + taken
+assert t("packageId") == "rimhunter.factionalwar", t("packageId")
+assert t("packageId").startswith("rimhunter.")
+assert t("author") == "Shadowrabbit, Ionfrigate12345, llunak, rimhunter", t("author")
+assert t("modVersion") == "1.1.0", t("modVersion")
+assert t("url") == "https://github.com/rimhunter/factional-war", t("url")
+assert [e.text for e in r.findall("supportedVersions/li")] == ["1.6", "1.7"]
+assert r.find("modDependencies") is None and r.find("modDependenciesByVersion") is None, "dependencies declared"
+assert [e.text for e in r.findall("loadAfter/li")] == ["Ludeon.RimWorld"]
+ids = sorted(e.text.lower() for e in r.findall("incompatibleWith/li"))
+assert ids == ["sr.modrimworld.factionalwar", "sr.modrimworld.factionalwarcontinued"], ids
+d = t("description")
+for need in ("Shadowrabbit", "Ionfrigate12345", "llunak", "Apache", "https://github.com/rimhunter/factional-war", "claims no ownership", "hand this mod back, or take it down, at Shadowrabbit's request"):
+    assert need in d, "description does not say: " + need
+assert "\\n" not in d, "literal backslash-n in the description"
+PY
+}
+license_unchanged() { upstream LICENSE | cmp - LICENSE; }
+notice_ok() {
+  python3 -I - <<'PY'
+import subprocess
+n = open("NOTICE", encoding="utf-8").read()
+for need in ("Shadowrabbit", "Apache License, Version 2.0", "MODIFICATIONS", "CHANGELOG.md", "Ionfrigate12345", "llunak"):
+    assert need in n, "NOTICE does not mention " + need
+m = open("MODIFICATIONS", encoding="utf-8").read()
+for need in ("Shadowrabbit/FactionalWar", "3d35b55", "Apache License, Version 2.0", "CHANGELOG.md", "2026-"):
+    assert need in m, "MODIFICATIONS does not mention " + need
+assert "Modifications Copyright 2026 rimhunter" in m
+tree = subprocess.run(["git", "ls-tree", "-r", "--name-only", "original-1.4"], check=True, capture_output=True).stdout.decode().split("\n")
+assert not [p for p in tree if p.upper().startswith("NOTICE")], "the original ships a NOTICE: it must be kept unchanged, and this check updated"
+PY
+}
+changelog_ok() {
+  python3 -I - <<'PY'
+import re
+c = open("CHANGELOG.md", encoding="utf-8").read()
+assert "3d35b55" in c and "original-1.4" in c
+assert re.search(r"^## (Unreleased|[0-9]+\.[0-9]+\.[0-9]+ \([0-9]{4}-[0-9]{2}-[0-9]{2}\))", c, re.M)
+lines = [l for l in c.split("\n") if l.startswith("- ")]
+assert lines and all(re.match(r"- [0-9]{4}-[0-9]{2}-[0-9]{2}: ", l) for l in lines), "a change line has no date"
+low = c.lower()
+for l in lines:
+    if re.search(r"\bfix(es)?\b|taken from", l, re.I):
+        by = re.search(r"Shadowrabbit|Ionfrigate12345|llunak|rimhunter", l)
+        assert by, "a fix entry names no author: " + l[:90]
+        if by.group(0) != "rimhunter":
+            assert re.search(r"commit [0-9a-f]{7}\b", l), "a fix taken from another build names no commit: " + l[:90]
+for need in ("identity", "packageid", "translation", "preview", "icon", "license", "1.6", "1.7", "workshop", "publishedfileid", "assembly-csharp", "prebuilt", "supportedversions", "incompatiblewith"):
+    assert need in low, "CHANGELOG does not list: " + need
+PY
+}
+version_ok() {
+  python3 -I - <<'PY'
+import re, xml.etree.ElementTree as ET
+about = ET.parse("About/About.xml").getroot().findtext("modVersion")
+proj = open("Source/ModRimWorldFactionalWar.csproj", encoding="utf-8").read()
+m = re.search(r"<Version>([^<]+)</Version>", proj)
+assert m, "the csproj sets no <Version>"
+assert m.group(1) == about, "csproj Version %s does not match About.xml modVersion %s" % (m.group(1), about)
+assert "AssemblyVersion" not in proj and "FileVersion" not in proj, "set only <Version>"
+c = open("CHANGELOG.md", encoding="utf-8").read()
+assert re.search(r"^## %s \([0-9]{4}-[0-9]{2}-[0-9]{2}\)$" % re.escape(about), c, re.M), "CHANGELOG has no section for " + about
+PY
+}
+languages_ok() {
+  python3 -I - "$here" <<'PY'
+import sys, glob, os, subprocess, xml.etree.ElementTree as ET
+root = sys.argv[1]
+def git(*a): return subprocess.run(["git", "-C", root, *a], check=True, capture_output=True).stdout
+def entries(raw, where):
+    r = ET.fromstring(raw.lstrip(b"\xef\xbb\xbf \t\r\n"))
+    tags = [e.tag for e in r if isinstance(e.tag, str)]
+    assert len(tags) == len(set(tags)), "duplicate key in " + where
+    return {e.tag: (e.text or "") for e in r if isinstance(e.tag, str)}
+old = git("ls-tree", "-r", "--name-only", "original-1.4", "Languages").decode().split("\n")
+old = [p for p in old if p]
+langs = sorted({p.split("/")[1] for p in old})
+assert langs == ["ChineseSimplified", "ChineseTraditional", "English", "French", "German", "Japanese", "Korean", "Polish", "PortugueseBrazilian", "Russian", "SpanishLatin"], langs
+assert sorted(os.listdir(root + "/Languages")) == langs, sorted(os.listdir(root + "/Languages"))
+keys = 0
+for path in old:
+    assert os.path.isfile(os.path.join(root, path)), "lost " + path
+    if not path.endswith(".xml") or path.endswith("LanguageInfo.xml"):
+        assert git("show", "original-1.4:" + path) == open(os.path.join(root, path), "rb").read(), "changed " + path
+        continue
+    was = entries(git("show", "original-1.4:" + path), path)
+    now = entries(open(os.path.join(root, path), "rb").read(), path)
+    for tag, text in was.items():
+        assert now.get(tag) == text, "key lost or changed: %s %s" % (path, tag)
+        keys += 1
+for f in glob.glob(root + "/Languages/*/*/**/*.xml", recursive=True):
+    parts = os.path.relpath(f, root).split("/")
+    assert parts[2] in ("Keyed", "DefInjected"), "file outside a folder the game loads: " + f
+    if not f.endswith("LanguageInfo.xml"):
+        assert open(f, "rb").read().startswith((b"\xef\xbb\xbf<?xml", b"<?xml")), "text before the XML declaration (the game cannot parse it): " + f
+assert keys > 300, keys
+PY
+}
+preview_ok() {
+  python3 -I - "$here" <<'PY'
+import sys, struct
+root = sys.argv[1]
+new = open(root + "/About/Preview.png", "rb").read()
+assert new[:8] == b"\x89PNG\r\n\x1a\n"
+w, h = struct.unpack(">II", new[16:24])
+assert w * 9 == h * 16 and w >= 640, (w, h)
+assert len(new) < 1024 * 1024, len(new)
+PY
+}
+original_images() {
+  git ls-tree -r --name-only original-1.4 | grep -iE '\.(png|jpg|jpeg|gif|psd|svg|dds|tga|bmp)$' | while IFS= read -r f; do git show "original-1.4:$f" | sha256sum | cut -d' ' -f1; done
+}
+no_original_image_ok() {
+  local banned f h
+  banned="$(original_images)"
+  [ "$(printf '%s\n' "$banned" | wc -l)" -ge 7 ] || { echo "found too few images in original-1.4 to ban"; return 1; }
+  while IFS= read -r -d '' f; do
+    [ -f "$f" ] || continue
+    h="$(sha256sum "$f" | cut -d' ' -f1)"
+    if grep -qx "$h" <<<"$banned"; then echo "$f is a copy of an image from the original (artist-credited, license unpublished)"; return 1; fi
+  done < <(git ls-files -z; git ls-files -z --others --exclude-standard)
+  return 0
+}
+own_art_ok() {
+  python3 -I - "$here" <<'PY'
+import sys, glob, struct
+root = sys.argv[1]
+files = sorted(glob.glob(root + "/Textures/World/WorldObjects/Sites/*.png"))
+names = [f.rsplit("/", 1)[1] for f in files]
+assert names == ["FactionTempCamp.png", "FactionTempCampExpand.png", "FactionWarContention.png", "FactionWarContentionExpand.png", "FactionWarShelling.png", "FactionWarShellingExpand.png"], names
+for f in files:
+    d = open(f, "rb").read()
+    assert d[:8] == b"\x89PNG\r\n\x1a\n" and struct.unpack(">II", d[16:24]) == (64, 64), f
+import os
+assert os.path.isfile(root + "/scripts/make-art"), "scripts/make-art (draws the preview and the six site icons) is missing"
+PY
+}
+workshop_ok() {
+  python3 -I - WORKSHOP.md <<'PY'
+import sys, re
+raw = open(sys.argv[1], encoding="utf-8").read()
+assert raw.count("\n---\n") >= 1
+body = raw.split("\n---\n", 1)[1]
+for i, line in enumerate(body.split("\n")):
+    assert not re.match(r"\s*(#{1,6}\s|[-*+]\s|\d+\.\s|>\s|```)", line), "markdown at line %d: %s" % (i, line)
+assert "**" not in body and "](" not in body and "`" not in body and "__" not in body
+tags = re.findall(r"\[(/?)([a-z0-9]+)(?:=[^\]]*)?\]", body)
+allowed = {"h1", "h2", "h3", "b", "i", "u", "strike", "spoiler", "noparse", "hr", "url", "list", "olist", "quote", "code", "table", "tr", "th", "td", "img", "p", "*"}
+stack = []
+for close, name in tags:
+    assert name in allowed, "unknown tag " + name
+    if name in ("hr", "*"): continue
+    if close:
+        assert stack and stack.pop() == name, "unbalanced " + name
+    else:
+        stack.append(name)
+assert not stack, stack
+low = body.lower()
+need = [
+    "continuation of shadowrabbit's factional war",
+    "https://steamcommunity.com/sharedfiles/filedetails/?id=2534328163",
+    "https://github.com/shadowrabbit/factionalwar",
+    "https://github.com/rimhunter/factional-war",
+    "https://github.com/rimhunter/factional-war/issues",
+    "shadowrabbit", "ionfrigate12345", "llunak",
+    "apache license 2.0",
+    "claims no ownership of the original",
+    "taken down or handed back at shadowrabbit's request",
+    "accepts no donations",
+    "unsubscribe",
+    "sr.modrimworld.factionalwar", "sr.modrimworld.factionalwarcontinued",
+    "2534328163", "3220197628", "3423264477",
+    "[sr]factional war", "[sr]factional war continued [abandoned]", "[sr]factional war (fork)",
+    "qux", "proxyer", "p8on-code", "b0tch", "zerstrick", "ozzy", "cyberfrog", "inbae",
+    "1.6", "1.7",
+    "not endorsed by ludeon",
+    "icons and the preview image are new",
+    "think you found a bug",
+]
+for n in need:
+    assert n.lower() in low, "missing: " + n
+assert "patreon" not in low and "ko-fi" not in low and "paypal" not in low and "buy me a coffee" not in low
+PY
+}
+readme_ok() {
+  grep -q 'Shadowrabbit' Readme.md && grep -q 'https://github.com/Shadowrabbit/FactionalWar' Readme.md && grep -q 'https://github.com/rimhunter/factional-war' Readme.md &&
+  grep -q 'Ionfrigate12345' Readme.md && grep -q 'llunak' Readme.md && grep -q 'Apache' Readme.md && grep -qi 'accepts no donations' Readme.md
+}
+package_ok() {
+  local out rc=0; out="$(mktemp -d)"
+  package_check "$out" || rc=1
+  rm -rf "$out"
+  return $rc
+}
+package_check() {
+  local out="$1"
+  scripts/package --no-build "$out/pkg" >/dev/null || return 1
+  for p in About/About.xml About/Preview.png LICENSE NOTICE MODIFICATIONS CHANGELOG.md Source/ModRimWorldFactionalWar.csproj Source/Incident/IncidentWorkerFactionWar.cs \
+           Languages/English/Keyed/SettingWindow.xml Languages/Polish/Keyed/SettingWindow.xml Textures/World/WorldObjects/Sites/FactionWarShelling.png; do
+    [ -f "$out/pkg/$p" ] || { echo "missing $p"; return 1; }
+  done
+  for p in TestRunner Tests scripts WORKSHOP.md Readme.md About/PublishedFileId.txt About/Manifest.xml Source/obj Source/bin; do
+    [ -e "$out/pkg/$p" ] && { echo "unexpected $p"; return 1; }
+  done
+  [ -z "$(find "$out/pkg" -iname 'PublishedFileId*')" ] || { echo "the package carries a PublishedFileId file"; return 1; }
+  return 0
+}
+scenarios_ok() {
+  python3 -I - <<'PY'
+import glob, xml.etree.ElementTree as ET
+ids = [e.text for e in ET.parse("About/About.xml").getroot().findall("incompatibleWith/li")]
+fixtures = {ET.parse(f).getroot().findtext("packageId").lower() for f in glob.glob("TestRunner/Fixtures/*/About/About.xml")}
+code = open("TestRunner/Source/Scenarios/IdentityModList.cs", encoding="utf-8").read()
+for i in ids:
+    assert i.lower() in fixtures, "no stand-in mod fixture for " + i
+    assert '"' + i + '"' in code, "IdentityModList does not check " + i
+assert "screenshot-mod-list-warns-when-the-original-factional-war-is-also-enabled" in code
+assert "every-existing-translation-loads-with-no-error" in open("TestRunner/Source/Scenarios/IdentityTranslations.cs", encoding="utf-8").read()
+PY
+}
+runner_ids_ok() {
+  python3 -I - <<'PY'
+import json, xml.etree.ElementTree as ET
+c = json.load(open("rimhunter-runner.json"))
+assert c["packageId"] == "rimhunter.factionalwar", c["packageId"]
+r = ET.parse("TestRunner/About/About.xml").getroot()
+assert [e.text for e in r.findall("loadAfter/li")] == ["rimhunter.factionalwar"]
+assert "SR.ModRimworld.FactionalWar" not in open("Tests/FactionalWar.Tests/ModFolderTests.cs", encoding="utf-8").read().replace("SR.ModRimworld.FactionalWarContinued", "")
+PY
+}
+no_original_id_ok() {
+  local tracked
+  tracked="$( (git ls-files; git ls-files --others --exclude-standard) | grep -v '^TestRunner/shared$' | sort -u)"
+  if grep -qi 'PublishedFileId' <<<"$tracked"; then echo "a PublishedFileId file is in the tree: $(grep -i PublishedFileId <<<"$tracked")"; return 1; fi
+  [ ! -e About/PublishedFileId.txt ] || { echo "About/PublishedFileId.txt exists"; return 1; }
+  local hits
+  hits="$(printf '%s\n' "$tracked" | xargs grep -Il "$ORIGINAL_ID" 2>/dev/null | grep -vE '^(WORKSHOP.md|CHANGELOG.md|Readme.md|NOTICE|scripts/test-identity)$')"
+  [ -z "$hits" ] || { echo "the original's Workshop id $ORIGINAL_ID appears in: $hits"; return 1; }
+  grep -q "$ORIGINAL_ID" About/About.xml && { echo "About.xml carries the original's Workshop id"; return 1; }
+  return 0
+}
+tree_clean() {
+  [ ! -e About/Manifest.xml ] && [ ! -e Source/Lib ] && [ -z "$(git ls-files | grep -E '(^|/)Assembly-CSharp\.dll$')" ] &&
+  [ -z "$(git ls-files -- '*.dll' '*.pdb')" ]
+}
+
+check "About.xml identity, credit, version, urls and incompatibleWith" about_ok
+check "csproj version equals About.xml, CHANGELOG has its section" version_ok
+check "LICENSE unchanged from the original" license_unchanged
+check "NOTICE and MODIFICATIONS state the modifications under Apache-2.0" notice_ok
+check "CHANGELOG dated, names the original commit, lists every kind of change" changelog_ok
+check "every language and key of the original kept unchanged" languages_ok
+check "own preview image, 16:9" preview_ok
+check "own site icons at the six texture paths, with the script that draws them" own_art_ok
+check "no image of the original in the tree" no_original_image_ok
+check "Workshop page is BBCode and says what it must" workshop_ok
+check "Readme credits and no donations" readme_ok
+check "package folder contents" package_ok
+check "mod list warning and translation scenarios" scenarios_ok
+check "runner and unit test name the new packageId" runner_ids_ok
+check "no PublishedFileId file and no original Workshop id outside the docs" no_original_id_ok
+check "no committed binary or bundled game DLL" tree_clean
+exit $fail

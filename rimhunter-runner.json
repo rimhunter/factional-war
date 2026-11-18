@@ -1,0 +1,16 @@
+{
+  "worldSeed": "factionalwar-runner-world",
+  "packageId": "rimhunter.factionalwar",
+  "modAssembly": "ModRimWorldFactionalWar.dll",
+  "modProject": "Source/ModRimWorldFactionalWar.csproj",
+  "runnerProject": "TestRunner/Source/FactionalWarTestRunner.csproj",
+  "runnerPackageId": "rimhunter.factionalwar.testrunner",
+  "runnerAssembly": "FactionalWarTestRunner.dll",
+  "runnerDir": "TestRunner",
+  "scenarioDirs": ["TestRunner/Source"],
+  "extraLaunches": [
+    {"label": "saved settings (two launches)", "command": ["scripts/test-saved-settings"]},
+    {"label": "translations in Russian and Polish (two launches)", "command": ["scripts/test-translations"]}
+  ],
+  "stageExclude": ["Source", "Tests", "scripts", "*.proj", "global.json", "LICENSE", ".gitignore", "rimhunter-runner.json"]
+}

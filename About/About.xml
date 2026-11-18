@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ModMetaData>
+    <name>Factional War (rimhunter)</name>
+    <author>Shadowrabbit, Ionfrigate12345, llunak, rimhunter</author>
+    <packageId>rimhunter.factionalwar</packageId>
+    <modVersion>1.1.0</modVersion>
+    <url>https://github.com/rimhunter/factional-war</url>
+    <supportedVersions>
+        <li>1.6</li>
+        <li>1.7</li>
+    </supportedVersions>
+    <loadAfter>
+        <li>Ludeon.RimWorld</li>
+    </loadAfter>
+    <incompatibleWith>
+        <li>SR.ModRimworld.FactionalWar</li>
+        <li>SR.ModRimworld.FactionalWarContinued</li>
+    </incompatibleWith>
+    <description>Factional War (rimhunter) is a continuation of Shadowrabbit's Factional War for RimWorld 1.6 and 1.7, by rimhunter. It is built from Shadowrabbit's own source under the Apache License 2.0, with credit to Ionfrigate12345 (the 1.5 continuation) and llunak (the 1.6 fork) where their work is used. rimhunter claims no ownership of the original, and will hand this mod back, or take it down, at Shadowrabbit's request. Source and changelog: https://github.com/rimhunter/factional-war
+
+Do not run another Factional War build alongside this one: RimWorld's mod list warns when the original, the 1.5 continuation or the 1.6 fork is enabled.
+
+This Mod adds 4 types of incidents.
+
+In these incidents, you are not the protagonist, and you are not at the center of the war. You are just a bystander, and you have the right to choose whether to be involved in the incident.
+
+The enemy's AI will have some more detailed performances, such as self-treat, killing enemy wounded, rescuing friendly wounded, destroying enemy factions and plundering loot, assaulting enemy faction camps, destroying enemy faction rooms to find loot, kidnapping members of hostile factions, and so on.
+
+The icons and the preview image are new, drawn by rimhunter. This mod accepts no donations. If you want to thank someone, thank Shadowrabbit.
+    </description>
+</ModMetaData>

@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs>
+  <FactionDef ParentName="PirateBandBase" MayRequire="Ludeon.RimWorld.Anomaly">
+    <defName>RimhunterTestShamblerCult</defName>
+    <label>test shambler cult</label>
+    <pawnSingular>cultist</pawnSingular>
+    <pawnsPlural>cultists</pawnsPlural>
+    <requiredCountAtGameStart>0</requiredCountAtGameStart>
+    <maxConfigurableAtWorldCreation>0</maxConfigurableAtWorldCreation>
+    <displayInFactionSelection>false</displayInFactionSelection>
+    <raidCommonalityFromPointsCurve>
+      <points>
+        <li>(0, 0)</li>
+      </points>
+    </raidCommonalityFromPointsCurve>
+    <fixedLeaderKinds>
+      <li>Town_Councilman</li>
+    </fixedLeaderKinds>
+    <pawnGroupMakers Inherit="False">
+      <li>
+        <kindDef>Combat</kindDef>
+        <options>
+          <ShamblerSwarmer>10</ShamblerSwarmer>
+          <ShamblerSoldier>2</ShamblerSoldier>
+        </options>
+      </li>
+    </pawnGroupMakers>
+  </FactionDef>
+</Defs>

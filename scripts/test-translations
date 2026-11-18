@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -euo pipefail
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+for language in "Russian (Русский)" "Polish (Polski)"; do
+  echo "launch in $language: site letters, world object labels and def texts read back from the files on disk"
+  "$here/scripts/run-scenarios" --language "$language" -s translation-booted-language-letters-and-labels-come-from-the-language-files "$@"
+done

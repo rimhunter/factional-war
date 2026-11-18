@@ -1,0 +1,9 @@
+﻿<?xml version="1.0" encoding="utf-8" ?>
+<LanguageData>
+    <SrNeedOptimization>Enable optimization</SrNeedOptimization>
+    <SrDescNeedOptimization>This will cause the destruction of unimportant roles and role relationships each time before a large number of roles are generated.</SrDescNeedOptimization>
+    <SrThreatPointFactor>Threat point factor</SrThreatPointFactor>
+    <SrDescThreatPointFactor>Affects the amount of pawns generated each time in this mod.</SrDescThreatPointFactor>
+    <SrSettingsCategory>Factional War</SrSettingsCategory>
+    <SrSettingsDefault>Default</SrSettingsDefault>
+</LanguageData>
